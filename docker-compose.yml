@@ -1,0 +1,59 @@
+services:
+
+  db:
+    image: mysql:8.0
+    env_file:
+      - .env
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    ports:
+      - "5002:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  usuarios:
+    build: ./usuarios
+    ports:
+      - "5001:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "5000:5000"
+    depends_on:
+      - backend
+      - usuarios
+    env_file:
+      - .env
+
+volumes:
+  db_data:

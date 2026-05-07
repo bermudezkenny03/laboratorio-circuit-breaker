@@ -1,16 +1,39 @@
 # Laboratorio - Circuit Breaker
 
+Implementación de un patrón **Circuit Breaker** usando microservicios con Flask y Docker Compose.
+
+El objetivo del laboratorio es analizar el comportamiento de un sistema distribuido ante fallos de servicios y aplicar mecanismos de resiliencia mediante estados `CLOSED`, `OPEN` y `HALF_OPEN`.
+
 ---
 
-## Estructura del repositorio
+# Integrantes
 
-```
+- Nombre Apellido
+- Nombre Apellido
+- Nombre Apellido
+
+---
+
+# Tecnologías utilizadas
+
+- Python
+- Flask
+- Docker
+- Docker Compose
+- Requests
+- Variables de entorno (`.env`)
+
+---
+
+# Estructura del repositorio
+
+```text
 laboratorio_circuit_breaker/
 ├── docker-compose.yml
-├── .env                       ← configuración del Circuit Breaker
+├── .env
 ├── README.md
 ├── gateway/
-│   ├── app.py                 ← Circuit Breaker completo (Fases 2-5)
+│   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── usuarios/
@@ -31,249 +54,329 @@ laboratorio_circuit_breaker/
 
 ---
 
-## Cómo levantar el proyecto
+# Cómo ejecutar el proyecto
+
+## 1. Clonar el repositorio
 
 ```bash
-# 1. Entrar a la carpeta
-cd laboratorio_circuit_breaker
-
-# 2. Levantar todos los servicios
-docker compose up --build
+git clone URL_DEL_REPOSITORIO
 ```
-
-### Endpoints disponibles
-
-| Endpoint    | URL                              | Descripción                              |
-|-------------|----------------------------------|------------------------------------------|
-| `/mascotas` | http://localhost:5000/mascotas   | Lista mascotas (con Circuit Breaker)     |
-| `/usuarios` | http://localhost:5000/usuarios   | Lista usuarios (con Circuit Breaker)     |
-| `/resumen`  | http://localhost:5000/resumen    | Ambos servicios en una sola respuesta    |
-| `/relacion` | http://localhost:5000/relacion   | Relación mascota-usuario                 |
-| `/estado`   | http://localhost:5000/estado     | Estado en tiempo real de los circuitos   |
 
 ---
 
-## Configuración del Circuit Breaker (.env)
+## 2. Entrar a la carpeta
 
-Los parámetros se configuran desde el `.env` **sin tocar código**.
-Después de cambiar un valor, reinicia con `docker compose up`.
+```bash
+cd laboratorio_circuit_breaker
+```
+
+---
+
+## 3. Levantar los servicios
+
+```bash
+docker compose up --build
+```
+
+---
+
+# Endpoints disponibles
+
+| Endpoint | URL | Descripción |
+|---|---|---|
+| `/mascotas` | http://localhost:5000/mascotas | Lista mascotas |
+| `/usuarios` | http://localhost:5000/usuarios | Lista usuarios |
+| `/resumen` | http://localhost:5000/resumen | Respuesta combinada |
+| `/relacion` | http://localhost:5000/relacion | Relación mascota-usuario |
+| `/estado` | http://localhost:5000/estado | Estado de los circuitos |
+
+---
+
+# Configuración del Circuit Breaker
+
+Los parámetros del sistema se configuran desde el archivo `.env`.
 
 ```env
-# Fallos consecutivos que abren el circuito
+# Número de fallos consecutivos para abrir el circuito
 CB_UMBRAL_FALLOS=3
 
-# Segundos en OPEN antes de pasar a HALF_OPEN
+# Tiempo de espera antes de intentar recuperación
 CB_TIEMPO_ESPERA=15
 
-# Timeout máximo por petición HTTP (segundos)
+# Timeout HTTP por petición
 CB_TIMEOUT_HTTP=2
 ```
 
 ---
 
-## FASE 1 – OBSERVAR (sin modificar código)
+# Funcionamiento del Circuit Breaker
 
-### ¿Qué hicimos?
-Levantamos el sistema y apagamos el servicio de mascotas:
+El sistema implementa los tres estados clásicos del patrón Circuit Breaker:
+
+| Estado | Descripción |
+|---|---|
+| `CLOSED` | El servicio funciona normalmente |
+| `OPEN` | El circuito bloquea llamadas al servicio |
+| `HALF_OPEN` | Se realiza una petición de prueba |
+
+---
+
+# Flujo del circuito
+
+```text
+CLOSED ──(3 fallos)──► OPEN
+OPEN ──(15 segundos)──► HALF_OPEN
+HALF_OPEN ──(éxito)──► CLOSED
+HALF_OPEN ──(fallo)──► OPEN
+```
+
+---
+
+# FASE 1 – OBSERVAR
+
+## Objetivo
+
+Analizar el comportamiento del sistema original al apagar un servicio.
+
+---
+
+## Procedimiento
+
+Apagar el backend:
+
 ```bash
 docker compose stop backend
 ```
-Luego hicimos varias peticiones a `/mascotas` y revisamos los logs con:
+
+Consultar:
+
+```bash
+http://localhost:5000/mascotas
+```
+
+Ver logs:
+
 ```bash
 docker compose logs gateway
 ```
 
-### ¿Qué hace el sistema actualmente?
+---
 
-El gateway original tenía un Circuit Breaker **parcial** solo en `/mascotas`:
-- Contaba fallos con una variable global `fallos_backend`.
-- Después de 3 fallos ponía `circuito_abierto = True`.
-- Devolvía `503` cuando el circuito estaba abierto.
+## Resultado observado
 
-El endpoint `/usuarios` **no tenía ninguna protección**: si el servicio caía, el gateway devolvía error 500 o se quedaba colgado esperando el timeout.
-
-### ¿Se protege o insiste?
-
-| Endpoint    | Comportamiento con servicio caído                        |
-|-------------|----------------------------------------------------------|
-| `/mascotas` | Insiste 3 veces → luego bloquea (protección básica)      |
-| `/usuarios` | Insiste indefinidamente, sin timeout ni fallback         |
-
-**Conclusión:** El sistema se protege parcialmente. El Circuit Breaker de clase no tenía estado Half-Open, por lo que el circuito nunca se cerraba solo aunque el servicio se recuperara. Había que reiniciar el gateway manualmente.
+| Endpoint | Comportamiento |
+|---|---|
+| `/mascotas` | Bloquea después de varios fallos |
+| `/usuarios` | No tenía protección |
 
 ---
 
-## FASE 2 – APLICAR (extensión del Circuit Breaker)
+## Evidencia
 
-### ¿Qué hicimos?
+![Fase 1](evidencias/fase1.png)
 
-En lugar de copiar el mismo bloque de variables globales tres veces, creamos una **clase `CircuitBreaker` reutilizable** que encapsula estado, contador y lógica de transición.
+---
 
-Instanciamos **un objeto independiente por servicio**:
+# FASE 2 – APLICAR
+
+## Objetivo
+
+Extender el patrón Circuit Breaker a múltiples servicios usando una clase reutilizable.
+
+---
+
+## Implementación
 
 ```python
 cb_mascotas = CircuitBreaker("mascotas", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
+
 cb_usuarios = CircuitBreaker("usuarios", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
+
 cb_relacion = CircuitBreaker("relacion", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
 ```
 
-Los valores `CB_UMBRAL_FALLOS` y `CB_TIEMPO_ESPERA` vienen del `.env` con `os.getenv()`, no están hardcodeados en el código.
+---
 
-### Decisiones de diseño
+## Decisiones tomadas
 
-**¿Cada servicio debe tener su propio contador de fallos?**
-Sí. Un fallo en mascotas no tiene relación con la salud del servicio de usuarios. Mezclar contadores llevaría a bloquear servicios que están funcionando bien.
-
-**¿El circuito debe abrirse de forma independiente por servicio?**
-Sí. Si el backend cae, `/usuarios` debe seguir respondiendo normalmente. Esto se demuestra en el endpoint `/resumen`, que llama a los dos servicios y devuelve lo que esté disponible.
-
-**¿Qué pasa si falla un servicio pero el otro sigue funcionando?**
-El endpoint `/resumen` lo muestra claramente: cada `CircuitBreaker` es autónomo. Si `cb_mascotas` está `OPEN` y `cb_usuarios` está `CLOSED`, el resumen devuelve los usuarios correctamente y solo reporta error en mascotas.
+- Un circuito independiente por servicio.
+- Parámetros configurables desde `.env`.
+- Clase reutilizable en lugar de variables globales.
 
 ---
 
-## FASE 3 – INVESTIGAR (Half-Open)
+## Evidencia
 
-### ¿Qué significa "half-open"?
-
-**Half-Open** es el tercer estado del Circuit Breaker. Funciona como una sala de espera: el circuito lleva un tiempo abierto y decide hacer **un único intento de prueba** para ver si el servicio se recuperó, antes de volver a abrir el tráfico completo.
-
-### ¿Cuándo se vuelve a intentar una llamada?
-
-Cuando transcurre el tiempo configurado en `CB_TIEMPO_ESPERA` (15 segundos por defecto). En ese momento el estado cambia automáticamente de `OPEN` a `HALF_OPEN` y la próxima petición actúa como prueba real.
-
-```
-CLOSED ──(3 fallos)──► OPEN
-OPEN   ──(15 s)──────► HALF_OPEN
-HALF_OPEN ──(éxito)──► CLOSED    ← circuito cerrado de nuevo
-HALF_OPEN ──(fallo)──► OPEN      ← vuelve a esperar 15 s
-```
-
-### ¿Qué pasa si el servicio vuelve a fallar?
-
-Si la llamada de prueba en `HALF_OPEN` también falla, el circuito **regresa inmediatamente a `OPEN`** y reinicia el temporizador. No se abre tráfico hasta confirmar que el servicio responde correctamente.
+![Fase 2](evidencias/fase2.png)
 
 ---
 
-## FASE 4 – IMPLEMENTAR (Recuperación)
+# FASE 3 – INVESTIGAR
 
-### ¿Qué implementamos?
+## Objetivo
 
-La lógica completa de recuperación está en la clase `CircuitBreaker` del `gateway/app.py`:
+Comprender el funcionamiento del estado `HALF_OPEN`.
+
+---
+
+## Explicación
+
+El estado `HALF_OPEN` permite realizar una única petición de prueba después de un tiempo de espera.
+
+Si la petición funciona:
+
+```text
+HALF_OPEN → CLOSED
+```
+
+Si falla:
+
+```text
+HALF_OPEN → OPEN
+```
+
+---
+
+## Evidencia
+
+![Fase 3](evidencias/fase3.png)
+
+---
+
+# FASE 4 – IMPLEMENTAR
+
+## Objetivo
+
+Implementar recuperación automática del circuito.
+
+---
+
+## Código principal
 
 ```python
-# Al abrir el circuito se guarda el timestamp
-self.tiempo_apertura = time.time()
-
-# En cada llamada, si está OPEN se verifica si ya pasó el tiempo
 if self.estado == self.OPEN:
     if time.time() - self.tiempo_apertura >= self.tiempo_espera:
-        self.estado = self.HALF_OPEN   # ← transición automática
-
-# Éxito en HALF_OPEN → cerrar circuito
-self.estado = self.CLOSED
-self.fallos = 0
-
-# Fallo en HALF_OPEN → volver a OPEN y reiniciar temporizador
-self.estado          = self.OPEN
-self.tiempo_apertura = time.time()
+        self.estado = self.HALF_OPEN
 ```
-
-### Parámetros elegidos
-
-| Variable          | Valor | Justificación                                         |
-|-------------------|-------|-------------------------------------------------------|
-| `CB_UMBRAL_FALLOS`| 3     | 3 errores consecutivos son señal clara de caída       |
-| `CB_TIEMPO_ESPERA`| 15 s  | Tiempo razonable para que un contenedor Docker reinicie|
-| `CB_TIMEOUT_HTTP` | 2 s   | Evita que el gateway se quede esperando indefinidamente|
 
 ---
 
-## FASE 5 – VALIDAR
+## Parámetros usados
 
-### Comandos para cada escenario
+| Variable | Valor |
+|---|---|
+| `CB_UMBRAL_FALLOS` | 3 |
+| `CB_TIEMPO_ESPERA` | 15 segundos |
+| `CB_TIMEOUT_HTTP` | 2 segundos |
+
+---
+
+## Evidencia
+
+![Fase 4](evidencias/fase4.png)
+
+---
+
+# FASE 5 – VALIDAR
+
+## Objetivo
+
+Comprobar el funcionamiento completo del Circuit Breaker.
+
+---
+
+## Escenarios probados
+
+### Servicio funcionando
+
+```json
+{
+  "estado": "CLOSED"
+}
+```
+
+---
+
+### Servicio caído
+
+```json
+{
+  "estado": "OPEN"
+}
+```
+
+---
+
+### Recuperación automática
+
+```json
+{
+  "estado": "HALF_OPEN"
+}
+```
+
+---
+
+## Evidencia
+
+![Fase 5](evidencias/fase5.png)
+
+---
+
+# Comandos útiles
+
+## Detener backend
 
 ```bash
-# Apagar el backend (servicio de mascotas)
 docker compose stop backend
+```
 
-# Volver a encenderlo
+---
+
+## Iniciar backend
+
+```bash
 docker compose start backend
+```
 
-# Ver logs del gateway en tiempo real
+---
+
+## Ver logs
+
+```bash
 docker compose logs -f gateway
 ```
 
-### Escenario 1 – Servicio funcionando (CLOSED)
-```json
-GET /estado
-{
-  "circuitos": [
-    { "servicio": "mascotas", "estado": "CLOSED", "fallos": 0 },
-    { "servicio": "usuarios", "estado": "CLOSED", "fallos": 0 }
-  ]
-}
-```
+---
 
-### Escenario 2 – Servicio caído (acumulando fallos)
-```json
-GET /mascotas  →  503
-{ "error": "Servicio 'mascotas' no disponible.", "fallos_acumulados": 1 }
+# Análisis final
 
-GET /mascotas  →  503
-{ "error": "Servicio 'mascotas' no disponible.", "fallos_acumulados": 2 }
+## Mejoras obtenidas
 
-GET /mascotas  →  503
-{ "error": "Servicio 'mascotas' no disponible.", "fallos_acumulados": 3 }
-```
-
-### Escenario 3 – Circuito abierto (respuesta inmediata sin tocar el servicio)
-```json
-GET /mascotas  →  503
-{
-  "error": "Servicio 'mascotas' bloqueado temporalmente.",
-  "estado_circuito": "OPEN",
-  "reintentar_en_seg": 11.4
-}
-
-# El servicio de usuarios sigue funcionando normalmente
-GET /usuarios  →  200 OK
-```
-
-### Escenario 4 – Recuperación (HALF_OPEN → CLOSED)
-```bash
-# Reiniciar backend y esperar 15 segundos
-docker compose start backend
-
-# La siguiente petición actúa como prueba
-GET /mascotas  →  200 OK   ← circuito se cierra automáticamente
-```
-```json
-GET /estado
-{ "servicio": "mascotas", "estado": "CLOSED", "fallos": 0 }
-```
+- Recuperación automática.
+- Independencia entre servicios.
+- Configuración externa mediante `.env`.
+- Respuestas rápidas ante fallos.
+- Monitoreo mediante `/estado`.
 
 ---
 
-## Análisis final
+## Dificultades encontradas
 
-### ¿Qué cambió en el comportamiento del sistema?
+- Manejo del estado en memoria.
+- Ajuste de tiempos de espera.
+- Validación de recuperación real del servicio.
 
-Antes el gateway colapsaba sin control cuando un servicio fallaba. Ahora:
-- Responde rápido con mensajes claros cuando un circuito está abierto.
-- Los servicios son independientes: si cae uno, los demás siguen operando.
-- El sistema se recupera solo cuando el servicio vuelve, sin reinicio manual.
-- Los parámetros se configuran desde `.env` sin tocar código.
+---
 
-### ¿Qué decisiones tomaron?
+# Conclusión
 
-1. **Clase reutilizable** en lugar de variables globales repetidas — más limpio y escalable.
-2. **Variables de entorno** para todos los parámetros — permite cambiar el comportamiento sin modificar código.
-3. **Endpoint `/estado`** — permite ver el estado de los circuitos en tiempo real, muy útil para monitoreo y evidencias.
-4. **Endpoint `/resumen`** — demuestra visiblemente que los circuitos son independientes.
+La implementación del patrón Circuit Breaker permitió mejorar la resiliencia del sistema distribuido evitando saturación de servicios caídos y permitiendo recuperación automática sin reiniciar el gateway.
 
-### ¿Qué dificultades encontraron?
+El laboratorio demuestra cómo aplicar tolerancia a fallos en arquitecturas basadas en microservicios utilizando Flask y Docker.
 
-- **Estado en memoria**: en producción con múltiples workers el estado de los CircuitBreakers debería estar en Redis para ser compartido. En este laboratorio con un solo proceso Flask es suficiente.
-- **Half-Open con una sola prueba**: si la prueba llega justo cuando el servicio sube pero aún no está listo, el circuito vuelve a abrirse. Una mejora sería exigir N éxitos consecutivos antes de cerrar definitivamente.
-- **Distinguir fallo transitorio de fallo permanente**: un umbral de 3 puede ser agresivo para errores de red intermitentes. En producción se usaría una ventana de tiempo deslizante.
+---
+
+# Autor
+
+Proyecto académico desarrollado para el laboratorio de resiliencia y tolerancia a fallos con microservicios.

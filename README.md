@@ -6,14 +6,6 @@ El objetivo del laboratorio es analizar el comportamiento de un sistema distribu
 
 ---
 
-# Integrantes
-
-- Nombre Apellido
-- Nombre Apellido
-- Nombre Apellido
-
----
-
 # Tecnologías utilizadas
 
 - Python

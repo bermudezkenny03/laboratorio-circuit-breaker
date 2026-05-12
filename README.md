@@ -77,7 +77,12 @@ docker compose up --build
 | Endpoint | URL | Descripción |
 |---|---|---|
 | `/mascotas` | http://localhost:5000/mascotas | Lista mascotas |
+| `/mascotas/<id>` | http://localhost:5000/mascotas/1 | Obtiene mascota por ID |
+| `/mascotas` (POST) | http://localhost:5000/mascotas | Crea nueva mascota |
 | `/usuarios` | http://localhost:5000/usuarios | Lista usuarios |
+| `/usuarios/<id>` | http://localhost:5000/usuarios/1 | Obtiene usuario por ID |
+| `/usuarios` (POST) | http://localhost:5000/usuarios | Crea nuevo usuario |
+| `/usuarios/<id>` (DELETE) | http://localhost:5000/usuarios/1 | Elimina usuario |
 | `/resumen` | http://localhost:5000/resumen | Respuesta combinada |
 | `/relacion` | http://localhost:5000/relacion | Relación mascota-usuario |
 | `/estado` | http://localhost:5000/estado | Estado de los circuitos |
@@ -183,8 +188,6 @@ Extender el patrón Circuit Breaker a múltiples servicios usando una clase reut
 cb_mascotas = CircuitBreaker("mascotas", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
 
 cb_usuarios = CircuitBreaker("usuarios", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
-
-cb_relacion = CircuitBreaker("relacion", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
 ```
 
 ---
@@ -194,6 +197,7 @@ cb_relacion = CircuitBreaker("relacion", CB_UMBRAL_FALLOS, CB_TIEMPO_ESPERA)
 - Un circuito independiente por servicio.
 - Parámetros configurables desde `.env`.
 - Clase reutilizable en lugar de variables globales.
+- `/relacion` se procesa en el gateway para aislar fallos: si un servicio cae, el otro sigue respondiendo.
 
 ---
 

@@ -1,3 +1,7 @@
+"""
+Backend de mascotas. Maneja el CRUD y consulta MySQL.
+"""
+
 import os
 import time
 import requests
@@ -7,8 +11,8 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 
-# Conexion a MySQL con reintentos
 def get_connection():
+    """Conecta a MySQL reintentando hasta 10 veces si no está lista."""
     intentos = 0
     while intentos < 10:
         try:
@@ -33,6 +37,7 @@ def home():
 
 @app.route("/mascotas", methods=["GET"])
 def listar_mascotas():
+    """Devuelve todas las mascotas de la base de datos."""
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute("SELECT id, nombre, tipo, id_usuario FROM mascotas")
@@ -49,6 +54,7 @@ def listar_mascotas():
 
 @app.route("/mascotas/<int:id_mascota>", methods=["GET"])
 def obtener_mascota(id_mascota):
+    """Busca una mascota por ID. Retorna 404 si no existe."""
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute(
@@ -71,6 +77,7 @@ def obtener_mascota(id_mascota):
 
 @app.route("/mascotas", methods=["POST"])
 def crear_mascota():
+    """Inserta una nueva mascota. id_usuario es opcional (default 1)."""
     data = request.json
 
     connection = get_connection()
@@ -88,7 +95,10 @@ def crear_mascota():
 
 @app.route("/relacion")
 def relacion():
-    # Combina mascotas con usuarios consumiendo el servicio de usuarios
+    """
+    Junta mascotas con usuarios llamando directamente al servicio de usuarios.
+    Nota: el gateway tiene su propia versión con Circuit Breaker.
+    """
     resp_usuarios = requests.get("http://usuarios:5000/usuarios", timeout=2)
     usuarios_lista = resp_usuarios.json()
     usuarios_map = {u["id"]: u for u in usuarios_lista}

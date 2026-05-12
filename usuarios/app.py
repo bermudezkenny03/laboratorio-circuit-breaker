@@ -1,3 +1,7 @@
+"""
+Servicio de usuarios. CRUD básico conectado a MySQL.
+"""
+
 import os
 import time
 import mysql.connector
@@ -6,8 +10,8 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 
-# Conexion a MySQL con reintentos
 def get_connection():
+    """Conecta a MySQL reintentando hasta 10 veces si no está lista."""
     intentos = 0
     while intentos < 10:
         try:
@@ -32,6 +36,7 @@ def home():
 
 @app.route("/usuarios", methods=["GET"])
 def listar_usuarios():
+    """Devuelve todos los usuarios registrados."""
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute("SELECT id, nombre, correo FROM usuarios")
@@ -48,6 +53,7 @@ def listar_usuarios():
 
 @app.route("/usuarios/<int:id_usuario>", methods=["GET"])
 def obtener_usuario(id_usuario):
+    """Busca un usuario por ID. Retorna 404 si no existe."""
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute(
@@ -69,6 +75,7 @@ def obtener_usuario(id_usuario):
 
 @app.route("/usuarios", methods=["POST"])
 def crear_usuario():
+    """Inserta un nuevo usuario con nombre y correo."""
     data = request.json
 
     connection = get_connection()
@@ -86,6 +93,7 @@ def crear_usuario():
 
 @app.route("/usuarios/<int:id_usuario>", methods=["DELETE"])
 def eliminar_usuario(id_usuario):
+    """Elimina un usuario por ID. Retorna 404 si no existe."""
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute("DELETE FROM usuarios WHERE id = %s", (id_usuario,))
